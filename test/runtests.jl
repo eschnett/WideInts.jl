@@ -78,7 +78,7 @@ w43 = WideUInt{UInt16}(0, 0x0403)
 @test w43 < w4321
 
 @test +w4321 === w4321
-@test -w4321 === WideUInt{UInt16}(-0x0201, -0x0403)
+@test -w4321 === WideUInt{UInt16}(-0x0201, -0x0404)
 @test abs(w4321) === w4321
 
 @test WideInts.wideadd(UInt8(0x00), UInt8(0x00)) === W8(0x00, 0x00)

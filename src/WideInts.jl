@@ -130,37 +130,59 @@ end
 
 # Arithmetic operations
 
+have_base_overflow = try Base.add_overflow; true catch e false end
+if have_base_overflow
+    const neg_overflow = Base.neg_overflow
+    const abs_overflow = Base.neg_overflow
+    const add_overflow = Base.add_overflow
+    const sub_overflow = Base.sub_overflow
+    const mul_overflow = Base.mul_overflow
+    const div_overflow = Base.mul_overflow
+    const rem_overflow = Base.mul_overflow
+else
+    neg_overflow{T<:Unsigned}(x::T) = x != 0
+    abs_overflow{T<:Unsigned}(x::T) = false
+    # c = x + y > typemax(T)
+    add_overflow{T<:Unsigned}(x::T, y::T) = x > ~y
+    # c = x - y < 0
+    sub_overflow{T<:Unsigned}(x::T, y::T) = x < y
+    mul_overflow{T<:Unsigned}(x::T, y::T) = y!=0 && x>div(typemax(T), y)
+    div_overflow{T<:Unsigned}(x::T, y::T) = false
+    rem_overflow{T<:Unsigned}(x::T, y::T) = false
+end
+
 import Base: +, -, abs
 +{T<:Unsigned}(x::WideUInt{T}) = x
--{T<:Unsigned}(x::WideUInt{T}) = WideUInt{T}(-x.lo, -x.hi)
+function -{T<:Unsigned}(x::WideUInt{T})
+    lo = -x.lo
+    c = neg_overflow(x.lo)
+    hi = -x.hi - c
+    WideUInt{T}(lo, hi)
+end
 abs{T<:Unsigned}(x::WideUInt{T}) = x
 
 import Base: +, -
 @inline function wideadd{T<:Unsigned}(x::T, y::T)
     lo = x + y
-    # c = x.lo + y.lo > typemax(T)
-    c = x > ~y
+    c = add_overflow(x, y)
     hi = c
     WideUInt{T}(lo, hi)
 end
 function +{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
     lo = x.lo + y.lo
-    # c = x.lo + y.lo > typemax(T)
-    c = x.lo > ~y.lo
+    c = add_overflow(x.lo, y.lo)
     hi = x.hi + y.hi + c
     WideUInt{T}(lo, hi)
 end
 function widesub{T<:Unsigned}(x::T, y::T)
     lo = x - y
-    # c = x.lo - y.lo < 0
-    c = x < y
+    c = sub_overflow(x, y)
     hi = -c
     WideUInt{T}(lo, hi)
 end
 function -{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
     lo = x.lo - y.lo
-    # c = x.lo - y.lo < 0
-    c = x.lo < y.lo
+    c = sub_overflow(x.lo, y.lo)
     hi = x.hi - y.hi - c
     WideUInt{T}(lo, hi)
 end
