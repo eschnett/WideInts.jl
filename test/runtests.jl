@@ -36,6 +36,16 @@ w43 = WideUInt{UInt16}(0, 0x0403)
 @test WideUInt{UInt16}(w4321) === WideUInt{UInt16}(0x0201, 0x0403)
 @test WideUInt{UInt32}(w4321) === WideUInt{UInt32}(0x04030201, 0)
 
+@test UInt8(WideUInt{UInt8}(UInt8(0x12))) === UInt8(0x12)
+@test UInt16(WideUInt{UInt8}(UInt16(0x1234))) === UInt16(0x1234)
+@test UInt32(WideUInt{UInt8}(UInt32(0x1234))) === UInt32(0x1234)
+@test UInt64(WideUInt{UInt8}(UInt64(0x1234))) === UInt64(0x1234)
+
+@test UInt8(WideUInt{UInt32}(UInt8(0x12))) === UInt8(0x12)
+@test UInt16(WideUInt{UInt32}(UInt16(0x1234))) === UInt16(0x1234)
+@test UInt32(WideUInt{UInt32}(UInt32(0x12345678))) === UInt32(0x12345678)
+@test UInt64(WideUInt{UInt32}(UInt64(0x12345678))) === UInt64(0x12345678)
+
 @test leading_zeros(w4321) == leading_zeros(UInt32(0x04030201))
 @test leading_zeros(w21) == leading_zeros(UInt32(0x0201))
 @test leading_ones(w4321) == leading_ones(UInt32(0x04030201))
