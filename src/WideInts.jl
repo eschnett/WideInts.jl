@@ -18,6 +18,7 @@ end
 import Base: rem, convert, promote_rule
 
 nbits{T}(::Type{T}) = 8*sizeof(T)
+mask{T}(::Type{T}) = ~T(0)
 halfnbits{T}(::Type{T}) = 4*sizeof(T)
 halfmask{T}(::Type{T}) = T(1) << halfnbits(T) - T(1)
 
@@ -95,15 +96,15 @@ import Base: ~
 ~{T<:Unsigned}(x::WideUInt{T}) = WideUInt{T}(~x.lo, ~x.hi)
 
 import Base: <<, >>, >>>
-function <<{T<:Unsigned}(x::WideUInt{T}, y::Int)
+@inline function <<{T<:Unsigned}(x::WideUInt{T}, y::Int)
     y >= nbits(T) && return WideUInt{T}(0, x.lo << (y - nbits(T)))
     WideUInt{T}(x.lo << y, x.hi << y | x.lo >> (nbits(T) - y))
 end
-function >>{T<:Unsigned}(x::WideUInt{T}, y::Int)
+@inline function >>{T<:Unsigned}(x::WideUInt{T}, y::Int)
     y >= nbits(T) && return WideUInt{T}(x.hi >> (y - nbits(T)), 0)
     WideUInt{T}(x.lo >> y | x.hi << (nbits(T) - y), x.hi >> y)
 end
->>>{T<:Unsigned}(x::WideUInt{T}, y::Int) = >>(x, y)
+@inline >>>{T<:Unsigned}(x::WideUInt{T}, y::Int) = >>(x, y)
 
 import Base: &, |, $
 (&){T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T}) =
@@ -175,10 +176,24 @@ hi{T<:Unsigned}(x::T) = x  >>> halfnbits(T)
     r2 = hi(x) * hi(y)
     WideUInt{T}(r0, r2) + wideadd(r1a, r1b) << halfnbits(T)
 end
+@inline function widemul_lo{T<:Unsigned}(x::T, y::T)
+    r0 = lo(x) * lo(y)
+    r1a = hi(x) * lo(y)
+    r1b = lo(x) * hi(y)
+    r0 + (r1a + r1b) << halfnbits(T)
+end
 function *{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
+    # r0 = widemul(x.lo, y.lo)
+    # r1 = widemul(x.hi, y.lo) + widemul(x.lo, y.hi)
+    # r0 + r1 << nbits(T)
+    # r0 = widemul(x.lo, y.lo)
+    # r1a = widemul(x.hi, y.lo)
+    # r1b = widemul(x.lo, y.hi)
+    # WideUInt{T}(r0.lo, r0.hi + r1a.lo + r1b.lo)
     r0 = widemul(x.lo, y.lo)
-    r1 = widemul(x.hi, y.lo) + widemul(x.lo, y.hi)
-    r0 + r1 << nbits(T)
+    r1a_lo = widemul_lo(x.hi, y.lo)
+    r1b_lo = widemul_lo(x.lo, y.hi)
+    WideUInt{T}(r0.lo, r0.hi + r1a_lo + r1b_lo)
 end
 
 end
