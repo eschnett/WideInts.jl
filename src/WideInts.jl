@@ -19,6 +19,7 @@ import Base: rem, convert, promote_rule
 
 nbits{T}(::Type{T}) = 8*sizeof(T)
 halfnbits{T}(::Type{T}) = 4*sizeof(T)
+halfmask{T}(::Type{T}) = T(1) << halfnbits(T) - T(1)
 
 rem{T<:OtherUnsigned}(x::WideUInt{T}, ::Type{T}) = x.lo
 function rem{T<:OtherUnsigned, U<:OtherInteger}(x::WideUInt{T}, ::Type{U})
@@ -95,9 +96,11 @@ import Base: ~
 
 import Base: <<, >>, >>>
 function <<{T<:Unsigned}(x::WideUInt{T}, y::Int)
+    y >= nbits(T) && return WideUInt{T}(0, x.lo << (y - nbits(T)))
     WideUInt{T}(x.lo << y, x.hi << y | x.lo >> (nbits(T) - y))
 end
 function >>{T<:Unsigned}(x::WideUInt{T}, y::Int)
+    y >= nbits(T) && return WideUInt{T}(x.hi >> (y - nbits(T)), 0)
     WideUInt{T}(x.lo >> y | x.hi << (nbits(T) - y), x.hi >> y)
 end
 >>>{T<:Unsigned}(x::WideUInt{T}, y::Int) = >>(x, y)
@@ -112,9 +115,15 @@ import Base: &, |, $
 
 # Comparisons
 
-import Base: <
+import Base: <, <=
+function <={T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
+    x.hi < y.hi && return true
+    x.hi > y.hi && return false
+    x.lo <= y.lo
+end
 function <{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
     x.hi < y.hi && return true
+    x.hi > y.hi && return false
     x.lo < y.lo
 end
 
@@ -126,17 +135,17 @@ import Base: +, -, abs
 abs{T<:Unsigned}(x::WideUInt{T}) = x
 
 import Base: +, -
-function wideadd{T<:Unsigned}(x::T, y::T)
+@inline function wideadd{T<:Unsigned}(x::T, y::T)
     lo = x + y
     # c = x.lo + y.lo > typemax(T)
-    c = x >= -y
+    c = x > ~y
     hi = c
     WideUInt{T}(lo, hi)
 end
 function +{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
     lo = x.lo + y.lo
     # c = x.lo + y.lo > typemax(T)
-    c = x.lo >= -y.lo
+    c = x.lo > ~y.lo
     hi = x.hi + y.hi + c
     WideUInt{T}(lo, hi)
 end
@@ -157,9 +166,9 @@ end
 
 import Base: *, div, rem
 
-lo{T<:Unsigned}(x::T) = x & (T(1) << halfnbits(T) - T(1))
-hi{T<:Unsigned}(x::T) = x >>> halfnbits(T)
-function widemul{T<:Unsigned}(x::T, y::T)
+lo{T<:Unsigned}(x::T) = x & halfmask(T)
+hi{T<:Unsigned}(x::T) = x  >>> halfnbits(T)
+@inline function widemul{T<:Unsigned}(x::T, y::T)
     r0 = lo(x) * lo(y)
     r1a = hi(x) * lo(y)
     r1b = lo(x) * hi(y)
