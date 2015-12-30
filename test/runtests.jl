@@ -1,56 +1,10 @@
 using WideInts
 using Base.Test
 
+using SmallInts
+
 typealias U4 UInt4
 typealias U8 UInt8
-
-for x in 0x00:0x0f
-    @test U8(U4(x)) === x
-    @test U4(x).val === x
-    @test rem(x, U4) === U4(x)
-    @test convert(U4, x) === U4(x)
-
-    @test leading_zeros(U4(x)) == leading_zeros(x) - 4
-    @test leading_ones(U4(x)) == leading_ones(x | 0xf0) - 4
-    @test trailing_zeros(U4(x)) == min(trailing_zeros(x), 4)
-    @test trailing_ones(U4(x)) == trailing_ones(x)
-
-    @test ~U4(x) === rem(~x, U4)
-    @test +U4(x) === rem(+x, U4)
-    @test -U4(x) === rem(-x, U4)
-    @test abs(U4(x)) === rem(abs(x), U4)
-
-    for y in 0x00:0x0f
-        @test U4(x) & U4(y) === U4(x & y)
-        @test U4(x) | U4(y) === U4(x | y)
-        @test U4(x) $ U4(y) === U4(x $ y)
-
-        @test U4(x) << U4(y) === rem(x << y, U4)
-        @test U4(x) >> U4(y) === U4(x >> y)
-        @test U4(x) >>> U4(y) === U4(x >>> y)
-
-        @test (U4(x) == U4(y)) === (x == y)
-        @test (U4(x) != U4(y)) === (x != y)
-        @test (U4(x) <= U4(y)) === (x <= y)
-        @test (U4(x) < U4(y)) === (x < y)
-        @test (U4(x) >= U4(y)) === (x >= y)
-        @test (U4(x) > U4(y)) === (x > y)
-
-        @test U4(x) + U4(y) === rem(x + y, U4)
-        @test U4(x) - U4(y) === rem(x - y, U4)
-        @test U4(x) * U4(y) === rem(x * y, U4)
-        if y>0
-            @test div(U4(x), U4(y)) === U4(div(x, y))
-            @test rem(U4(x), U4(y)) === U4(rem(x, y))
-            @test fld(U4(x), U4(y)) === U4(fld(x, y))
-            @test mod(U4(x), U4(y)) === U4(mod(x, y))
-            @test cld(U4(x), U4(y)) === U4(cld(x, y))
-        end
-    end
-end
-
-
-
 typealias U16 UInt16
 
 typealias W4 WideUInt{U4}

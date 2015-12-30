@@ -2,71 +2,12 @@ module WideInts
 
 export WideUInt
 
+using SmallInts
+
 typealias BaseSigned Union{Int8, Int16, Int32, Int64, Int128}
 typealias BaseUnsigned Union{UInt8, UInt16, UInt32, UInt64, UInt128}
 typealias BaseInteger Union{BaseSigned, BaseUnsigned}
 
-export UInt4
-immutable UInt4 <: Unsigned
-    val::UInt8
-end
-
-import Base: typemin, typemax, rem, convert, promote_rule
-typemin(::Type{UInt4}) = UInt4(0x00)
-typemax(::Type{UInt4}) = UInt4(0x0f)
-rem(x::UInt4, ::Type{UInt4}) = x
-rem(x::UInt4, ::Type{Bool}) = rem(x.val, Bool)
-rem{T<:BaseInteger}(x::UInt4, ::Type{T}) = rem(x.val, T)
-rem(x::Bool, ::Type{UInt4}) = UInt4(rem(x, UInt8))
-rem{T<:BaseInteger}(x::T, ::Type{UInt4}) = UInt4(rem(x, UInt8) & 0x0f)
-convert(::Type{UInt4}, x::UInt4) = x
-convert(::Type{UInt4}, x::Bool) = UInt4(convert(UInt8, x))
-function convert{T<:BaseInteger}(::Type{UInt4}, x::T)
-    if (x<0) | (x>0x0f) throw(InexactError()) end
-    rem(x, UInt4)
-end
-convert(::Type{Bool}, x::UInt4) = convert(Bool, x.val)
-convert{T<:BaseInteger}(::Type{T}, x::UInt4) = convert(T, x.val)
-promote_rule{T<:BaseUnsigned}(::Type{UInt4}, ::Type{T}) = T
-
-import Base: leading_zeros, leading_ones, trailing_zeros, trailing_ones
-leading_zeros(x::UInt4) = leading_zeros((x.val << 4) | 0x0f)
-leading_ones(x::UInt4) = leading_ones(x.val << 4)
-trailing_zeros(x::UInt4) = trailing_zeros(x.val | 0xf0)
-trailing_ones(x::UInt4) = trailing_ones(x.val)
-import Base: ~, &, |, $
-~(x::UInt4) = UInt4(~x.val & 0x0f)
-(&)(x::UInt4, y::UInt4) = UInt4(x.val & y.val)
-(|)(x::UInt4, y::UInt4) = UInt4(x.val | y.val)
-($)(x::UInt4, y::UInt4) = UInt4(x.val $ y.val)
-
-import Base: <<, >>, >>>
-<<(x::UInt4, y::Int) = UInt4((x.val << y) & 0x0f)
->>(x::UInt4, y::Int) = UInt4(x.val >> y)
->>>(x::UInt4, y::Int) = >>(x, y)
-
-import Base: <, <=
-<=(x::UInt4, y::UInt4) = x.val <= y.val
-<(x::UInt4, y::UInt4) = x.val < y.val
-
-import Base: +, -, abs, *, div, rem, fld, mod, cld
-+(x::UInt4) = x
--(x::UInt4) = rem(-x.val, UInt4)
-abs(x::UInt4) = x
-+(x::UInt4, y::UInt4) = rem(x.val + y.val, UInt4)
--(x::UInt4, y::UInt4) = rem(x.val - y.val, UInt4)
-*(x::UInt4, y::UInt4) = rem(x.val * y.val, UInt4)
-div(x::UInt4, y::UInt4) = rem(div(x.val, y.val), UInt4)
-rem(x::UInt4, y::UInt4) = rem(rem(x.val, y.val), UInt4)
-fld(x::UInt4, y::UInt4) = rem(fld(x.val, y.val), UInt4)
-mod(x::UInt4, y::UInt4) = rem(mod(x.val, y.val), UInt4)
-cld(x::UInt4, y::UInt4) = rem(cld(x.val, y.val), UInt4)
-
-################################################################################
-
-# typealias OtherUnsigned Union{subtypes(Unsigned)...}
-# typealias OtherInteger
-#     Union{setdiff(subtypes(Integer), [Unsigned])..., OtherUnsigned}
 typealias OtherSigned Union{BaseSigned}
 typealias OtherUnsigned Union{UInt4, BaseUnsigned}
 typealias OtherInteger Union{OtherSigned, OtherUnsigned}
