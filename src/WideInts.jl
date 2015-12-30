@@ -130,15 +130,11 @@ end
 
 # Arithmetic operations
 
-have_base_overflow = try Base.add_overflow; true catch e false end
+const have_base_overflow = try Base.add_overflow; true catch e false end
 if have_base_overflow
-    const neg_overflow = Base.neg_overflow
-    const abs_overflow = Base.neg_overflow
-    const add_overflow = Base.add_overflow
-    const sub_overflow = Base.sub_overflow
-    const mul_overflow = Base.mul_overflow
-    const div_overflow = Base.mul_overflow
-    const rem_overflow = Base.mul_overflow
+    info("imported")
+    import Base: neg_overflow, abs_overflow,
+        add_overflow, sub_overflow, mul_overflow, div_overflow, rem_overflow
 else
     neg_overflow{T<:Unsigned}(x::T) = x != 0
     abs_overflow{T<:Unsigned}(x::T) = false
