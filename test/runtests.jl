@@ -171,64 +171,33 @@ w43 = W16(0, 0x0403)
 # const u16range_short =
 #     Set(0x0000:0x00ff) ∪ Set(0x0000:0x101:0xffff) ∪ Set(0xff00:0xffff)
 
-info("loop 1")
 for x in 0x00:0x0f
     for y in 0x00:0x0f
         @test WideInts.dmul(U4(x), U4(y)) === W4(widemul(x, y))
     end
 end
 
-info("loop 1")
+for x in 0x00:0xff
+    for y in 0x00:0x0f
+        @test WideInts.dmul1(U8(x), U4(y)) === W8(widemul(x, y))
+    end
+end
+
 for x in 0x00:0xff
     for y in 0x00:0xff
-        @test WideInts.dmul(U8(x), U8(y)) === W8(widemul(x, y))
+        @test WideInts.dmul(W4(x), W4(y)) === WW4(widemul(x, y))
     end
 end
 
-#=TODO
-info("loop 2")
-for x in 0x0000:0x11:0xffff
-    for y in 0x00:0xff
-        @test WideInts.dmul1(U16(x), U8(y)) === W16(widemul(x, y))
+for x in 0x00:0xff
+    ymax = x==0 ? 0xff : fld(0xff, x)
+    for y in 0x00:ymax
+        @test W4(x) * W4(y) === W4(x*y)
     end
 end
 
-info("loop 3")
-for x in 0x0000:0x101:0xffff
-    for y in 0x0000:0x11:0xffff
-        @test WideInts.dmul(W8(x), W8(y)) === WW8(widemul(x, y))
-    end
-end
-
-info("loop 4")
-for x in 0x0000:0xffff
-    ymax = x==0 ? 0xffff : U16(fld(0xffff, x))
-    for y in 0x0000:ymax
-        @test W8(x) * W8(y) === W8(x*y)
-    end
-end
-=#
-
-#=
-info("loop 5")
-for x in 0x0000:0x11:0xffff
+for x in 0x00:0xff
     for y in 0x01:0xff
-        @test WideInts.ddiv(U16(x), U8(y)) === (U16(div(x, y)), U8(rem(x, y)))
+        @test divrem(W4(x), W4(y)) === (W4(div(x, y)), W4(rem(x, y)))
     end
 end
-
-info("loop 6")
-for x in 0x00000000:0x1001:0x00ffffff
-    for y in 0x01:0xff
-        @test WideInts.ddiv1(W16(x), U8(y)) === (W16(div(x, y)), U8(rem(x, y)))
-    end
-end
-
-info("loop 7")
-for x in 0x00000000:0xffffffff
-    if x % 0x100 == 0 info("x=$(hex(x))") end
-    for y in 0x01:0xff
-        @test WideInts.ddiv1(WW8(x), U8(y)) === (WW8(div(x, y)), U8(rem(x, y)))
-    end
-end
-=#

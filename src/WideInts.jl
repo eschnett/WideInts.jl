@@ -62,6 +62,8 @@ fld(x::UInt4, y::UInt4) = rem(fld(x.val, y.val), UInt4)
 mod(x::UInt4, y::UInt4) = rem(mod(x.val, y.val), UInt4)
 cld(x::UInt4, y::UInt4) = rem(cld(x.val, y.val), UInt4)
 
+################################################################################
+
 # typealias OtherUnsigned Union{subtypes(Unsigned)...}
 # typealias OtherInteger
 #     Union{setdiff(subtypes(Integer), [Unsigned])..., OtherUnsigned}
@@ -78,9 +80,9 @@ end
 
 import Base: typemin, typemax, rem, convert, promote_rule
 
-nbits{T<:Unsigned}(::Type{T}) = 8*sizeof(T)
+nbits{T<:Unsigned}(::Type{T}) = trailing_zeros(T(0))
 mask{T<:Unsigned}(::Type{T}) = ~T(0)
-halfnbits{T<:Unsigned}(::Type{T}) = 4*sizeof(T)
+halfnbits{T<:Unsigned}(::Type{T}) = nbits(T) ÷ 2
 halfmask{T<:Unsigned}(::Type{T}) = ~T(0) >>> halfnbits(T)
 
 typemin{T<:Unsigned}(::Type{WideUInt{T}}) = WideUInt{T}(0, 0)
@@ -90,10 +92,7 @@ typemax{T<:Unsigned}(::Type{WideUInt{T}}) = WideUInt{T}(typemax(T), typemax(T))
 rem{T<:OtherUnsigned}(x::T, ::Type{WideUInt{T}}) = WideUInt{T}(x, 0)
 rem{R<:Unsigned}(x::Bool, ::Type{WideUInt{R}}) = WideUInt{R}(x, 0)
 function rem{T<:OtherInteger, R<:Unsigned}(x::T, ::Type{WideUInt{R}})
-    info("rem T=$T R=$R x=$(hex(x))")
-    r = WideUInt{R}(x % R, (x >> nbits(R)) % R)
-    #info("rem T=$T R=$R x=$(hex(x)) r=$(hex(r))")
-    r
+    WideUInt{R}(x % R, (x >> nbits(R)) % R)
 end
 convert{T<:OtherUnsigned}(::Type{WideUInt{T}}, x::T) = WideUInt{T}(x, 0)
 convert{R<:Unsigned}(::Type{WideUInt{R}}, x::Bool) = WideUInt{R}(x, 0)
@@ -102,7 +101,6 @@ function convert{R<:Unsigned, T<:OtherInteger}(::Type{WideUInt{R}}, x::T)
     typemax(T) <= typemax(R) && return WideUInt{R}(x, 0)
     lo = x % R
     hi = (x >> nbits(R)) % R
-    info("conv T=$T R=$R x=$(hex(x)) lo=$(hex(lo)) hi=$(hex(hi))")
     x >> 2*nbits(R) != 0 && throw(InexactError())
     WideUInt{R}(lo, hi)
 end
@@ -274,70 +272,16 @@ function -{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
     WideUInt{T}(lo, hi)
 end
 
-################################################################################
+import Base: *, divrem, div, rem, fldmod, fld, mod
 
-#=
-immutable HalfWideUInt{T} <: Unsigned
-    lo::T
-    hi::T
-end
-
-function is_normalized{T<:Unsigned}(x::HalfWideUInt{T})
-    (lo >> halfnbits(T) == 0) & (hi >> halfnbits(T) == 0)
-end
-
-function normalize{T<:Unsigned}(x::HalfWideUInt{T})
-    lo = x.lo & halfmask(T)
-    hi = x.hi + lo >> halfnbits(T)
-    @assert hi >> halfnbits(T) == 0
-    HalfWideUInt{T}(lo, hi)
-end
-
-
-function rem{T<:OtherUnsigned}(x::Type{T}, ::Type{HalfWideUInt{T}})
-    lo = x & halfmask(T)
-    hi = x >> halfnbits(T)
-    HalfWideUInt{T}(lo, hi)
-end
-
-convert{T<:OtherUnsigned}(::Type{HalfWideUInt{T}}, x::T) =
-    rem(x, HalfWideUInt{T})
-
-
-@inline function <<{T<:Unsigned}(x::HalfWideUInt{T}, y::Int)
-    y >= halfnbits(T) && return HalfWideUInt{T}(0, x.lo << (y - halfnbits(T)))
-    lo = (x.lo << y) & halfmask(T)
-    hi = (x.hi << y) & halfmask(T) | x.lo >> (halfnbits(T) - y)
-    HalfWideUInt{T}(lo, hi)
-end
-@inline function >>{T<:Unsigned}(x::HalfWideUInt{T}, y::Int)
-    y >= halfnbits(T) && return HalfWideUInt{T}(x.hi >> (y - halfnbits(T)), 0)
-    lo = x.lo >> y | (x.hi << (nbits(T) - y)) & halfmask(T)
-    hi = x.hi >> y
-    WideUInt{T}(lo, hi)
-end
-@inline >>>{T<:Unsigned}(x::WideUInt{T}, y::Int) = >>(x, y)
-
-
-+{T<:Unsigned}(x::HalfWideUInt{T}) = x
--{T<:Unsigned}(x::HalfWideUInt{T}) = normalize(HalfWideUInt{T}(-x.lo, -y.hi))
-
-+{T<:Unsigned}(x::HalfWideUInt{T}, y::HalfWideUInt{T}) =
-    normalize(HalfWideUInt{T}(x.lo + y.lo, x.hi + y.hi))
--{T<:Unsigned}(x::HalfWideUInt{T}, y::HalfWideUInt{T}) =
-    normalize(HalfWideUInt{T}(x.lo - y.lo, x.hi - y.hi))
-=#
-
-################################################################################
-
-import Base: *, div, rem
-
+halftype(::Type{UInt8}) = UInt4
 halftype(::Type{UInt16}) = UInt8
 halftype(::Type{UInt32}) = UInt16
 halftype(::Type{UInt64}) = UInt32
 halftype(::Type{UInt128}) = UInt64
 halftype{T<:Unsigned}(::Type{WideUInt{T}}) = T
 
+doubletype(::Type{UInt4}) = UInt8
 doubletype(::Type{UInt8}) = UInt16
 doubletype(::Type{UInt16}) = UInt32
 doubletype(::Type{UInt32}) = UInt64
@@ -378,96 +322,54 @@ function *{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
     r.lo
 end
 
-#=
-#TODO: maybe remove this
-function ddiv{T<:OtherInteger, HT<:OtherInteger}(x::T, y::HT)
-    @assert HT == halftype(T)
-    q, r = divrem(x, T(y))
-    q, r % HT
-end
-ddiv{T<:OtherInteger}(x::T, y::T) = divrem(x, y)
-=#
-
-function ddiv1{T<:Unsigned, HT<:Unsigned}(x::WideUInt{T}, y::HT)
-    info("ddiv1 x=$(hex(x))::WideUInt{$T} y=$(hex(y))::$HT")
-    @assert HT == halftype(T)
+function divrem{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
     y == 0 && throw(DivideError())
+    # Initial choice
     WT = WideUInt{T}
-    nb = nbits(HT)
-    # info("    T(0)=$(hex(T(0)))")
-    q, r = WT(0), x
-    info("    q=$(hex(q)) r=$(hex(r))")
-    @assert x == q * y + r
-    Base.@nexprs 3 step -> begin
-        off = 3 - step
-        t, _ = ddiv((r >> off*nb) % T, y % T)
-        q += WT(t) << off*nb
-        r -= dmul1(t, y) << off*nb
-        @assert x == q * y + r
-        @assert r >> off*nb < y
-    end
-    q, r % HT
-end
-
-#=
-function ddiv{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
-    y == 0 && throw(DivideError())
-    HT = halftype(T)
-    WT = WideUInt{T}
-    nb = nbits(HT)
     q, r = WT(0), x
     @assert x == q * y + r
     while r >= y
         rprev = r
-        # Find suitable offset for y
-        yoffset = max(0, nbits(WT) - leading_zeros(y) - nbits(HT))
-        @assert (y >> yoffset) <= typemax(HT)
-        yhi = (y >> yoffset) % HT
-        # Take a step
-        t, _ = ddiv1(r >> yoffset, yhi)
-        if t * y > r
-            # Underflow
-            t -= 1
+        # Find leading one bit in r
+        ilogb_r = nbits(WT) - leading_zeros(r) - 1
+        if ilogb_r < nbits(T)
+            # Both high elements are zero
+            @assert y.hi == 0
+            t,u = divrem(r.lo, y.lo)
+            q += t
+            r = WT(u)
+            break
         end
-        @assert t * y <= r
-        q += t
-        r -= t * y
-        # Check variant and invariant
-        @assert r < rpref
-        @assert x == q * y + r
-    end
-    q, r
-end
-=#
-
-function div{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
-    y == 0 && throw(DivideError())
-    WT = WideUInt{T}
-    # nb = nbits(T)
-    ldz_x = leading_zeros(x)
-    ldz_y = leading_zeros(y)
-    x = x << ldz_x
-    y = y << ldz_y
-    q, r = WT(0), x
-    # ldz_q = 0
-    ldz_r = ldz_x
-    @assert x >> ldz_x == q * (y >> ldz_y) + (r >> ldz_r)
-    while r >> ldz_r >= y >> ldz_y
-        rprev = r
-        # Perform approximate division
-        if y.hi == typemax(T)
-            t = y.lo
+        r1 = rem(r >> (ilogb_r - nbits(T) + 1), T)
+        y1 = rem((y - WT(1)) >> (ilogb_r - nbits(T) + 1), T) + T(1)   # round up
+        if y1 == 0
+            # overflow; r and y must be almost equal
+            t = T(1)
         else
-            t = div(x.hi, y.hi + T(1))
+            t = div(r1, y1)
+            if t == 0
+                # underflow; r and y must be almost equal
+                t = T(1)
+            end
         end
-        ldz_t = ldz_x - ldz_y
-        q += t >> ldz_t
-        r -= t * y
+        @assert t > 0
+        @assert r >= WT(t) * y
+        q += WT(t)
+        r -= WT(t) * y
         # Check variant and invariant
-        @assert r < rpref
+        @assert r < rprev
         @assert x == q * y + r
     end
+    @assert x == q * y + r
+    @assert r < y
     q, r
 end
+
+div{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T}) = divrem(x, y)[1]
+rem{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T}) = divrem(x, y)[2]
+
+fldmod{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T}) = divrem(x, y)
+fld{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T}) = fldmod(x, y)[1]
+mod{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T}) = fldmod(x, y)[2]
 
 end
