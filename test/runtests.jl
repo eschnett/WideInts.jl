@@ -1,11 +1,62 @@
 using WideInts
 using Base.Test
 
+typealias U4 UInt4
 typealias U8 UInt8
+
+for x in 0x00:0x0f
+    @test U8(U4(x)) === x
+    @test U4(x).val === x
+    @test rem(x, U4) === U4(x)
+    @test convert(U4, x) === U4(x)
+
+    @test leading_zeros(U4(x)) == leading_zeros(x) - 4
+    @test leading_ones(U4(x)) == leading_ones(x | 0xf0) - 4
+    @test trailing_zeros(U4(x)) == min(trailing_zeros(x), 4)
+    @test trailing_ones(U4(x)) == trailing_ones(x)
+
+    @test ~U4(x) === rem(~x, U4)
+    @test +U4(x) === rem(+x, U4)
+    @test -U4(x) === rem(-x, U4)
+    @test abs(U4(x)) === rem(abs(x), U4)
+
+    for y in 0x00:0x0f
+        @test U4(x) & U4(y) === U4(x & y)
+        @test U4(x) | U4(y) === U4(x | y)
+        @test U4(x) $ U4(y) === U4(x $ y)
+
+        @test U4(x) << U4(y) === rem(x << y, U4)
+        @test U4(x) >> U4(y) === U4(x >> y)
+        @test U4(x) >>> U4(y) === U4(x >>> y)
+
+        @test (U4(x) == U4(y)) === (x == y)
+        @test (U4(x) != U4(y)) === (x != y)
+        @test (U4(x) <= U4(y)) === (x <= y)
+        @test (U4(x) < U4(y)) === (x < y)
+        @test (U4(x) >= U4(y)) === (x >= y)
+        @test (U4(x) > U4(y)) === (x > y)
+
+        @test U4(x) + U4(y) === rem(x + y, U4)
+        @test U4(x) - U4(y) === rem(x - y, U4)
+        @test U4(x) * U4(y) === rem(x * y, U4)
+        if y>0
+            @test div(U4(x), U4(y)) === U4(div(x, y))
+            @test rem(U4(x), U4(y)) === U4(rem(x, y))
+            @test fld(U4(x), U4(y)) === U4(fld(x, y))
+            @test mod(U4(x), U4(y)) === U4(mod(x, y))
+            @test cld(U4(x), U4(y)) === U4(cld(x, y))
+        end
+    end
+end
+
+
+
 typealias U16 UInt16
 
+typealias W4 WideUInt{U4}
 typealias W8 WideUInt{U8}
 typealias W16 WideUInt{U16}
+typealias WW4 WideUInt{W4}
 typealias WW8 WideUInt{W8}
 
 w0 = W16(0, 0)
@@ -120,7 +171,13 @@ w43 = W16(0, 0x0403)
 # const u16range_short =
 #     Set(0x0000:0x00ff) ∪ Set(0x0000:0x101:0xffff) ∪ Set(0xff00:0xffff)
 
-#=TODO
+info("loop 1")
+for x in 0x00:0x0f
+    for y in 0x00:0x0f
+        @test WideInts.dmul(U4(x), U4(y)) === W4(widemul(x, y))
+    end
+end
+
 info("loop 1")
 for x in 0x00:0xff
     for y in 0x00:0xff
@@ -128,6 +185,7 @@ for x in 0x00:0xff
     end
 end
 
+#=TODO
 info("loop 2")
 for x in 0x0000:0x11:0xffff
     for y in 0x00:0xff
@@ -149,7 +207,9 @@ for x in 0x0000:0xffff
         @test W8(x) * W8(y) === W8(x*y)
     end
 end
+=#
 
+#=
 info("loop 5")
 for x in 0x0000:0x11:0xffff
     for y in 0x01:0xff
@@ -163,7 +223,6 @@ for x in 0x00000000:0x1001:0x00ffffff
         @test WideInts.ddiv1(W16(x), U8(y)) === (W16(div(x, y)), U8(rem(x, y)))
     end
 end
-=#
 
 info("loop 7")
 for x in 0x00000000:0xffffffff
@@ -172,3 +231,4 @@ for x in 0x00000000:0xffffffff
         @test WideInts.ddiv1(WW8(x), U8(y)) === (WW8(div(x, y)), U8(rem(x, y)))
     end
 end
+=#

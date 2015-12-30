@@ -2,11 +2,72 @@ module WideInts
 
 export WideUInt
 
+typealias BaseSigned Union{Int8, Int16, Int32, Int64, Int128}
+typealias BaseUnsigned Union{UInt8, UInt16, UInt32, UInt64, UInt128}
+typealias BaseInteger Union{BaseSigned, BaseUnsigned}
+
+export UInt4
+immutable UInt4 <: Unsigned
+    val::UInt8
+end
+
+import Base: typemin, typemax, rem, convert, promote_rule
+typemin(::Type{UInt4}) = UInt4(0x00)
+typemax(::Type{UInt4}) = UInt4(0x0f)
+rem(x::UInt4, ::Type{UInt4}) = x
+rem(x::UInt4, ::Type{Bool}) = rem(x.val, Bool)
+rem{T<:BaseInteger}(x::UInt4, ::Type{T}) = rem(x.val, T)
+rem(x::Bool, ::Type{UInt4}) = UInt4(rem(x, UInt8))
+rem{T<:BaseInteger}(x::T, ::Type{UInt4}) = UInt4(rem(x, UInt8) & 0x0f)
+convert(::Type{UInt4}, x::UInt4) = x
+convert(::Type{UInt4}, x::Bool) = UInt4(convert(UInt8, x))
+function convert{T<:BaseInteger}(::Type{UInt4}, x::T)
+    if (x<0) | (x>0x0f) throw(InexactError()) end
+    rem(x, UInt4)
+end
+convert(::Type{Bool}, x::UInt4) = convert(Bool, x.val)
+convert{T<:BaseInteger}(::Type{T}, x::UInt4) = convert(T, x.val)
+promote_rule{T<:BaseUnsigned}(::Type{UInt4}, ::Type{T}) = T
+
+import Base: leading_zeros, leading_ones, trailing_zeros, trailing_ones
+leading_zeros(x::UInt4) = leading_zeros((x.val << 4) | 0x0f)
+leading_ones(x::UInt4) = leading_ones(x.val << 4)
+trailing_zeros(x::UInt4) = trailing_zeros(x.val | 0xf0)
+trailing_ones(x::UInt4) = trailing_ones(x.val)
+import Base: ~, &, |, $
+~(x::UInt4) = UInt4(~x.val & 0x0f)
+(&)(x::UInt4, y::UInt4) = UInt4(x.val & y.val)
+(|)(x::UInt4, y::UInt4) = UInt4(x.val | y.val)
+($)(x::UInt4, y::UInt4) = UInt4(x.val $ y.val)
+
+import Base: <<, >>, >>>
+<<(x::UInt4, y::Int) = UInt4((x.val << y) & 0x0f)
+>>(x::UInt4, y::Int) = UInt4(x.val >> y)
+>>>(x::UInt4, y::Int) = >>(x, y)
+
+import Base: <, <=
+<=(x::UInt4, y::UInt4) = x.val <= y.val
+<(x::UInt4, y::UInt4) = x.val < y.val
+
+import Base: +, -, abs, *, div, rem, fld, mod, cld
++(x::UInt4) = x
+-(x::UInt4) = rem(-x.val, UInt4)
+abs(x::UInt4) = x
++(x::UInt4, y::UInt4) = rem(x.val + y.val, UInt4)
+-(x::UInt4, y::UInt4) = rem(x.val - y.val, UInt4)
+*(x::UInt4, y::UInt4) = rem(x.val * y.val, UInt4)
+div(x::UInt4, y::UInt4) = rem(div(x.val, y.val), UInt4)
+rem(x::UInt4, y::UInt4) = rem(rem(x.val, y.val), UInt4)
+fld(x::UInt4, y::UInt4) = rem(fld(x.val, y.val), UInt4)
+mod(x::UInt4, y::UInt4) = rem(mod(x.val, y.val), UInt4)
+cld(x::UInt4, y::UInt4) = rem(cld(x.val, y.val), UInt4)
+
 # typealias OtherUnsigned Union{subtypes(Unsigned)...}
 # typealias OtherInteger
 #     Union{setdiff(subtypes(Integer), [Unsigned])..., OtherUnsigned}
-typealias OtherUnsigned Union{UInt8, UInt16, UInt32, UInt64, UInt128}
-typealias OtherInteger Union{Int8, Int16, Int32, Int64, Int128, OtherUnsigned}
+typealias OtherSigned Union{BaseSigned}
+typealias OtherUnsigned Union{UInt4, BaseUnsigned}
+typealias OtherInteger Union{OtherSigned, OtherUnsigned}
 
 immutable WideUInt{T<:Unsigned} <: Unsigned
     lo::T
@@ -317,6 +378,7 @@ function *{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
     r.lo
 end
 
+#=
 #TODO: maybe remove this
 function ddiv{T<:OtherInteger, HT<:OtherInteger}(x::T, y::HT)
     @assert HT == halftype(T)
@@ -324,6 +386,7 @@ function ddiv{T<:OtherInteger, HT<:OtherInteger}(x::T, y::HT)
     q, r % HT
 end
 ddiv{T<:OtherInteger}(x::T, y::T) = divrem(x, y)
+=#
 
 function ddiv1{T<:Unsigned, HT<:Unsigned}(x::WideUInt{T}, y::HT)
     info("ddiv1 x=$(hex(x))::WideUInt{$T} y=$(hex(y))::$HT")
@@ -376,5 +439,35 @@ function ddiv{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
     q, r
 end
 =#
+
+function div{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
+    y == 0 && throw(DivideError())
+    WT = WideUInt{T}
+    # nb = nbits(T)
+    ldz_x = leading_zeros(x)
+    ldz_y = leading_zeros(y)
+    x = x << ldz_x
+    y = y << ldz_y
+    q, r = WT(0), x
+    # ldz_q = 0
+    ldz_r = ldz_x
+    @assert x >> ldz_x == q * (y >> ldz_y) + (r >> ldz_r)
+    while r >> ldz_r >= y >> ldz_y
+        rprev = r
+        # Perform approximate division
+        if y.hi == typemax(T)
+            t = y.lo
+        else
+            t = div(x.hi, y.hi + T(1))
+        end
+        ldz_t = ldz_x - ldz_y
+        q += t >> ldz_t
+        r -= t * y
+        # Check variant and invariant
+        @assert r < rpref
+        @assert x == q * y + r
+    end
+    q, r
+end
 
 end
