@@ -139,6 +139,8 @@ end
 
 for x in 0x00:0xff
     for y in 0x00:0xff
+        t1 = WideInts.dmul(W4(x), W4(y))
+        t2 = WW4(widemul(x, y))
         @test WideInts.dmul(W4(x), W4(y)) === WW4(widemul(x, y))
     end
 end

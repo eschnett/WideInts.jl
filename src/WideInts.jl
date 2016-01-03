@@ -8,8 +8,8 @@ typealias BaseSigned Union{Int8, Int16, Int32, Int64, Int128}
 typealias BaseUnsigned Union{UInt8, UInt16, UInt32, UInt64, UInt128}
 typealias BaseInteger Union{BaseSigned, BaseUnsigned}
 
-typealias OtherSigned Union{BaseSigned}
-typealias OtherUnsigned Union{UInt4, BaseUnsigned}
+typealias OtherSigned Union{Int1, Int2, Int4, BaseSigned}
+typealias OtherUnsigned Union{UInt1, UInt2, UInt4, BaseUnsigned}
 typealias OtherInteger Union{OtherSigned, OtherUnsigned}
 
 immutable WideUInt{T<:Unsigned} <: Unsigned
@@ -17,11 +17,37 @@ immutable WideUInt{T<:Unsigned} <: Unsigned
     hi::T
 end
 
+nbits{T}(::Type{T}) = 8*sizeof(T)
+nbits{T<:Union{UInt1,Int1}}(::Type{T}) = 1
+nbits{T<:Union{UInt2,Int2}}(::Type{T}) = 2
+nbits{T<:Union{UInt4,Int4}}(::Type{T}) = 4
+nbits{T}(::Type{WideUInt{T}}) = 2*nbits(T)
+
+import Base: bin, hex, show
+function bin{T}(x::WideUInt{T}, pad::Int=0)
+    lopad = nbits(T)
+    hipad = pad - lopad
+    if x.hi == 0 && hipad <= 0
+        bin(x.lo, lopad)
+    else
+        bin(x.hi, hipad) * bin(x.lo, lopad)
+    end
+end
+function hex{T}(x::WideUInt{T}, pad::Int=0)
+    lopad = nbits(T) ÷ 4
+    hipad = pad - lopad
+    if x.hi == 0 && hipad <= 0
+        hex(x.lo, lopad)
+    else
+        hex(x.hi, hipad) * hex(x.lo, lopad)
+    end
+end
+show{T}(io::IO, x::WideUInt{T}) = print(io, "0x", hex(x))
+
 # Creation and type conversions
 
 import Base: typemin, typemax, rem, convert, promote_rule
 
-nbits{T<:Unsigned}(::Type{T}) = trailing_zeros(T(0))
 mask{T<:Unsigned}(::Type{T}) = ~T(0)
 halfnbits{T<:Unsigned}(::Type{T}) = nbits(T) ÷ 2
 halfmask{T<:Unsigned}(::Type{T}) = ~T(0) >>> halfnbits(T)
@@ -32,7 +58,7 @@ typemax{T<:Unsigned}(::Type{WideUInt{T}}) = WideUInt{T}(typemax(T), typemax(T))
 # regular to wide
 rem{T<:OtherUnsigned}(x::T, ::Type{WideUInt{T}}) = WideUInt{T}(x, 0)
 rem{R<:Unsigned}(x::Bool, ::Type{WideUInt{R}}) = WideUInt{R}(x, 0)
-function rem{T<:OtherInteger, R<:Unsigned}(x::T, ::Type{WideUInt{R}})
+@inline function rem{T<:OtherInteger, R<:Unsigned}(x::T, ::Type{WideUInt{R}})
     WideUInt{R}(x % R, (x >> nbits(R)) % R)
 end
 convert{T<:OtherUnsigned}(::Type{WideUInt{T}}, x::T) = WideUInt{T}(x, 0)
@@ -48,7 +74,7 @@ end
 
 # wide to wide
 rem{T<:Unsigned}(x::WideUInt{T}, ::Type{WideUInt{T}}) = x
-function rem{T<:Unsigned, R<:Unsigned}(x::WideUInt{T}, ::Type{WideUInt{R}})
+@inline function rem{T<:Unsigned, R<:Unsigned}(x::WideUInt{T}, ::Type{WideUInt{R}})
     if nbits(R) < nbits(T)
         lo = x.lo % R
         hi = (x.lo >> nbits(R) | x.hi << (nbits(T) - nbits(R))) % R
@@ -147,16 +173,19 @@ import Base: &, |, $
 # Comparisons
 
 import Base: <, <=
-function <={T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
+@inline function <={T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
     x.hi < y.hi && return true
     x.hi > y.hi && return false
     x.lo <= y.lo
 end
-function <{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
+@inline function <{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
     x.hi < y.hi && return true
     x.hi > y.hi && return false
     x.lo < y.lo
 end
+import Base: >, >=
+@inline >{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T}) = y < x
+@inline >={T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T}) = y <= x
 
 # Arithmetic operations
 
@@ -168,9 +197,9 @@ else
     neg_overflow{T<:Unsigned}(x::T) = x != 0
     abs_overflow{T<:Unsigned}(x::T) = false
     # c = x + y > typemax(T)
-    add_overflow{T<:Unsigned}(x::T, y::T) = x > ~y
+    @inline add_overflow{T<:Unsigned}(x::T, y::T) = x > ~y
     # c = x - y < 0
-    sub_overflow{T<:Unsigned}(x::T, y::T) = x < y
+    @inline sub_overflow{T<:Unsigned}(x::T, y::T) = x < y
     mul_overflow{T<:Unsigned}(x::T, y::T) = y!=0 && x>div(typemax(T), y)
     div_overflow{T<:Unsigned}(x::T, y::T) = false
     rem_overflow{T<:Unsigned}(x::T, y::T) = false
@@ -194,7 +223,7 @@ import Base: +, -
     hi = c
     WideUInt{T}(lo, hi)
 end
-function +{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
+@inline function +{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
     lo = x.lo + y.lo
     c = add_overflow(x.lo, y.lo)
     hi = x.hi + y.hi + c
@@ -206,7 +235,7 @@ function widesub{T<:Unsigned}(x::T, y::T)
     hi = -c
     WideUInt{T}(lo, hi)
 end
-function -{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
+@inline function -{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
     lo = x.lo - y.lo
     c = sub_overflow(x.lo, y.lo)
     hi = x.hi - y.hi - c
@@ -215,6 +244,8 @@ end
 
 import Base: *, divrem, div, rem, fldmod, fld, mod
 
+halftype(::Type{UInt2}) = UInt1
+halftype(::Type{UInt4}) = UInt2
 halftype(::Type{UInt8}) = UInt4
 halftype(::Type{UInt16}) = UInt8
 halftype(::Type{UInt32}) = UInt16
@@ -222,16 +253,18 @@ halftype(::Type{UInt64}) = UInt32
 halftype(::Type{UInt128}) = UInt64
 halftype{T<:Unsigned}(::Type{WideUInt{T}}) = T
 
+doubletype(::Type{UInt1}) = UInt2
+doubletype(::Type{UInt2}) = UInt4
 doubletype(::Type{UInt4}) = UInt8
 doubletype(::Type{UInt8}) = UInt16
 doubletype(::Type{UInt16}) = UInt32
 doubletype(::Type{UInt32}) = UInt64
 doubletype(::Type{UInt64}) = UInt128
 
-function dmul{T<:OtherUnsigned}(x::T, y::T)
+@inline function dmul{T<:OtherUnsigned}(x::T, y::T)
     DT = doubletype(T)
     WT = WideUInt{T}
-    WT(DT(x) * DT(y))
+    ((x%DT) * (y%DT)) % WT
 end
 
 function split{T<:OtherUnsigned}(x::T)
@@ -240,26 +273,26 @@ function split{T<:OtherUnsigned}(x::T)
 end
 split{T<:Unsigned}(x::WideUInt{T}) = x
 
-function dmul1{T<:Unsigned, HT<:Unsigned}(x::T, y::HT)
+@inline function dmul1{T<:Unsigned, HT<:Unsigned}(x::T, y::HT)
     @assert HT == halftype(T)
     x2 = split(x)
     rlo = dmul(x2.lo, y)
     rhi = dmul(x2.hi, y)
     WT = WideUInt{T}
-    WT(rlo) + WT(rhi) << nbits(HT)
+    rlo%WT + (rhi%WT) << nbits(HT)
 end
-function dmul{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
+@inline function dmul{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
     WT = WideUInt{T}
     WWT = WideUInt{WT}
     y2 = split(y)
     rlo = dmul1(x, y2.lo)
     rhi = dmul1(x, y2.hi)
-    WWT(rlo) + WWT(rhi) << nbits(T)
+    rlo%WWT + (rhi%WWT) << nbits(T)
 end
 
 function *{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
     r = dmul(x, y)
-    r.hi != 0 && throw(OverflowError())
+    # r.hi != 0 && throw(OverflowError())
     r.lo
 end
 
