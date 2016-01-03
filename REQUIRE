@@ -1,3 +1,2 @@
 julia 0.4
-# SmallInts
-https://github.com/eschnett/SmallInts.jl
+SmallInts
