@@ -27,20 +27,14 @@ import Base: bin, hex, show
 function bin{T}(x::WideUInt{T}, pad::Int=0)
     lopad = nbits(T)
     hipad = pad - lopad
-    if x.hi == 0 && hipad <= 0
-        bin(x.lo, lopad)
-    else
-        bin(x.hi, hipad) * bin(x.lo, lopad)
-    end
+    x.hi == 0 && hipad <= 0 && return bin(x.lo, lopad)
+    bin(x.hi, hipad) * bin(x.lo, lopad)
 end
 function hex{T}(x::WideUInt{T}, pad::Int=0)
     lopad = nbits(T) ÷ 4
     hipad = pad - lopad
-    if x.hi == 0 && hipad <= 0
-        hex(x.lo, lopad)
-    else
-        hex(x.hi, hipad) * hex(x.lo, lopad)
-    end
+    x.hi == 0 && hipad <= 0 && hex(x.lo, lopad)
+    hex(x.hi, hipad) * hex(x.lo, lopad)
 end
 show{T}(io::IO, x::WideUInt{T}) = print(io, "0x", hex(x))
 
