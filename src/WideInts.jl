@@ -1,20 +1,24 @@
 module WideInts
 
-export WideUInt
+export WideUInt, WideInt
 
 using SmallInts
 
-typealias BaseSigned Union{Int8, Int16, Int32, Int64, Int128}
 typealias BaseUnsigned Union{UInt8, UInt16, UInt32, UInt64, UInt128}
+typealias BaseSigned Union{Int8, Int16, Int32, Int64, Int128}
 typealias BaseInteger Union{BaseSigned, BaseUnsigned}
 
-typealias OtherSigned Union{Int1, Int2, Int4, BaseSigned}
 typealias OtherUnsigned Union{UInt1, UInt2, UInt4, BaseUnsigned}
+typealias OtherSigned Union{Int1, Int2, Int4, BaseSigned}
 typealias OtherInteger Union{OtherSigned, OtherUnsigned}
 
 immutable WideUInt{T<:Unsigned} <: Unsigned
     lo::T
     hi::T
+end
+immutable WideInt{S<:Signed, T<:Unsigned} <: Signed
+    lo::T
+    hi::S
 end
 
 nbits{T}(::Type{T}) = 8*sizeof(T)
@@ -22,6 +26,9 @@ nbits{T<:Union{UInt1,Int1}}(::Type{T}) = 1
 nbits{T<:Union{UInt2,Int2}}(::Type{T}) = 2
 nbits{T<:Union{UInt4,Int4}}(::Type{T}) = 4
 nbits{T}(::Type{WideUInt{T}}) = 2*nbits(T)
+nbits{S,T}(::Type{WideInt{S,T}}) = nbits(S)+nbits(T)
+
+bitshift(x,n) = ifelse(n>=0, x<<n, x>>n)
 
 import Base: bin, hex, show
 function bin{T}(x::WideUInt{T}, pad::Int=0)
@@ -37,17 +44,34 @@ function hex{T}(x::WideUInt{T}, pad::Int=0)
     hex(x.hi, hipad) * hex(x.lo, lopad)
 end
 show{T}(io::IO, x::WideUInt{T}) = print(io, "0x", hex(x))
+function bin{S,T}(x::WideInt{S,T}, pad::Int=0)
+    x<0 && return "-" * bin(-x, pad)
+    lopad = nbits(T)
+    hipad = pad - lopad
+    x.hi == 0 && hipad <= 0 && return bin(x.lo, lopad)
+    bin(x.hi, hipad) * bin(x.lo, lopad)
+end
+function hex{S,T}(x::WideInt{S,T}, pad::Int=0)
+    x<0 && return "-" * hex(-x, pad)
+    lopad = nbits(T) ÷ 4
+    hipad = pad - lopad
+    x.hi == 0 && hipad <= 0 && hex(x.lo, lopad)
+    hex(x.hi, hipad) * hex(x.lo, lopad)
+end
+show{S,T}(io::IO, x::WideInt{S,T}) = print(io, "0x", hex(x))
 
 # Creation and type conversions
 
 import Base: typemin, typemax, rem, convert, promote_rule
 
-mask{T<:Unsigned}(::Type{T}) = ~T(0)
-halfnbits{T<:Unsigned}(::Type{T}) = nbits(T) ÷ 2
-halfmask{T<:Unsigned}(::Type{T}) = ~T(0) >>> halfnbits(T)
+mask{T}(::Type{T}) = ~T(0)
+halfnbits{T}(::Type{T}) = nbits(T) ÷ 2
+halfmask{T}(::Type{T}) = ~T(0) >>> halfnbits(T)
 
-typemin{T<:Unsigned}(::Type{WideUInt{T}}) = WideUInt{T}(0, 0)
-typemax{T<:Unsigned}(::Type{WideUInt{T}}) = WideUInt{T}(typemax(T), typemax(T))
+typemin{T}(::Type{WideUInt{T}}) = WideUInt{T}(0, 0)
+typemax{T}(::Type{WideUInt{T}}) = WideUInt{T}(typemax(T), typemax(T))
+typemin{S,T}(::Type{WideInt{S,T}}) = WideInt{S,T}(typemin(S), typemin(T))
+typemax{S,T}(::Type{WideInt{S,T}}) = WideInt{S,T}(typemax(S), typemax(T))
 
 # regular to wide
 rem{T<:OtherUnsigned}(x::T, ::Type{WideUInt{T}}) = WideUInt{T}(x, 0)
@@ -55,44 +79,74 @@ rem{R<:Unsigned}(x::Bool, ::Type{WideUInt{R}}) = WideUInt{R}(x, 0)
 @inline function rem{T<:OtherInteger, R<:Unsigned}(x::T, ::Type{WideUInt{R}})
     WideUInt{R}(x % R, (x >> nbits(R)) % R)
 end
+
+rem{S<:OtherSigned, T<:OtherUnsigned}(x::T, ::Type{WideInt{S,T}}) =
+    WideInt{S,T}(x, 0)
+rem{S<:Signed, R<:Unsigned}(x::Bool, ::Type{WideInt{S,R}}) = WideInt{S,R}(x, 0)
+@inline function rem{T<:OtherInteger, S<:Signed, R<:Unsigned}(
+        x::T, ::Type{WideInt{S,R}})
+    WideInt{S,R}(x % R, (x >> nbits(R)) % S)
+end
+
 convert{T<:OtherUnsigned}(::Type{WideUInt{T}}, x::T) = WideUInt{T}(x, 0)
 convert{R<:Unsigned}(::Type{WideUInt{R}}, x::Bool) = WideUInt{R}(x, 0)
 function convert{R<:Unsigned, T<:OtherInteger}(::Type{WideUInt{R}}, x::T)
-    x < 0 && throw(InexactError())
-    typemax(T) <= typemax(R) && return WideUInt{R}(x, 0)
-    lo = x % R
-    hi = (x >> nbits(R)) % R
     x >> 2*nbits(R) != 0 && throw(InexactError())
-    WideUInt{R}(lo, hi)
+    rem(x, WideUInt{R})
+end
+
+convert{S<:OtherSigned, T<:OtherUnsigned}(::Type{WideInt{S,T}}, x::T) =
+    WideInt{S,T}(x, 0)
+convert{S<:Signed, R<:Unsigned}(::Type{WideInt{S,R}}, x::Bool) =
+    WideInt{S,R}(x, 0)
+function convert{S<:Signed, R<:Unsigned, T<:OtherInteger}(
+        ::Type{WideInt{S,R}}, x::T)
+    x >> (nbits(R)+nbits(S)) != -signbit(x) && throw(InexactError())
+    rem(x, WideInt{S,R})
 end
 
 # wide to wide
 rem{T<:Unsigned}(x::WideUInt{T}, ::Type{WideUInt{T}}) = x
-@inline function rem{T<:Unsigned, R<:Unsigned}(x::WideUInt{T}, ::Type{WideUInt{R}})
-    if nbits(R) < nbits(T)
-        lo = x.lo % R
-        hi = (x.lo >> nbits(R) | x.hi << (nbits(T) - nbits(R))) % R
-    else
-        lo = x.lo % R | x.hi % R << nbits(T)
-        hi = x.hi % R >> (nbits(R) - nbits(T))
-    end
+@inline function rem{T<:Unsigned, R<:Unsigned}(
+        x::WideUInt{T}, ::Type{WideUInt{R}})
+    lo = x.lo % R | x.hi % R << nbits(T)
+    hi = (x.lo >> nbits(R) | bitshift(x.hi, nbits(T) - nbits(R))) % R
     WideUInt{R}(lo, hi)
 end
+
+rem{S<:Signed, T<:Unsigned}(x::WideInt{S,T}, ::Type{WideInt{S,T}}) = x
+@inline function rem{S<:Signed, T<:Unsigned, R<:Signed, U<:Unsigned}(
+        x::WideInt{S,T}, ::Type{WideInt{R,U}})
+    lo = x.lo % U | x.hi % U << nbits(T)
+    hi = (x.lo >> nbits(U) | bitshift(x.hi, nbits(T) - nbits(U))) % R
+    WideInt{R,U}(lo, hi)
+end
+
 convert{T<:OtherUnsigned}(::Type{WideUInt{T}}, x::WideUInt{T}) = x
 function convert{R<:Unsigned, T<:Unsigned}(::Type{WideUInt{R}}, x::WideUInt{T})
-    if nbits(R) < nbits(T)
-        lo = x.lo % R
-        hi = (x.lo >> nbits(R) | x.hi << (nbits(T) - nbits(R))) % R
-        if 2*nbits(R) >= nbits(T)
-            x.hi >> (2*nbits(R) - nbits(T)) != 0 && throw(InexactError())
-        else
-            (x.hi != 0) | (x.lo >> 2*nbits(T) != 0) && throw(InexactError())
-        end
+    if 2*nbits(R) >= nbits(T)
+        x.hi >> (2*nbits(R) - nbits(T)) != 0 && throw(InexactError())
     else
-        lo = x.lo % R | x.hi % R << nbits(T)
-        hi = x.hi % R >> (nbits(R) - nbits(T))
+        (x.hi != 0) | (x.lo >> 2*nbits(T) != 0) && throw(InexactError())
     end
-    WideUInt{R}(lo, hi)
+    rem(x, WideUInt{R})
+end
+
+function convert{S<:OtherSigned, T<:OtherUnsigned}(
+        ::Type{WideInt{S,T}}, x::WideInt{S,T})
+    x
+end
+function convert{S<:Signed, R<:Unsigned, T<:Signed, U<:Unsigned}(
+        ::Type{WideInt{S,R}}, x::WideInt{T,U})
+    r = rem(x, WideInt{S,R})
+    if nbits(S)+nbits(R) >= nbits(T)
+        x.hi >> (2*nbits(R) - nbits(T)) != -signbit(r) &&
+            throw(InexactError())
+    else
+        (x.hi != -signbit(r)) | (x.lo >> (nbits(T)+nbits(U)) != -signbit(r)) &&
+            throw(InexactError())
+    end
+    rem(x, WideInt{S,R})
 end
 
 # wide to regular
@@ -101,19 +155,44 @@ rem{T<:Unsigned}(x::WideUInt{T}, ::Type{Bool}) = x.lo % Bool
 function rem{T<:Unsigned, R<:OtherInteger}(x::WideUInt{T}, ::Type{R})
     x.lo % R | x.hi % R << nbits(T)
 end
+
+rem{S<:OtherSigned, T<:OtherUnsigned}(x::WideInt{S,T}, ::Type{T}) = x.lo
+rem{S<:Signed, T<:Unsigned}(x::WideInt{S,T}, ::Type{Bool}) = x.lo % Bool
+function rem{S<:Signed, T<:Unsigned, R<:OtherInteger}(
+        x::WideInt{S,T}, ::Type{R})
+    x.lo % R | x.hi % R << nbits(T)
+end
+
 function convert{T<:OtherUnsigned}(::Type{T}, x::WideUInt{T})
     x.hi != 0 && throw(InexactError())
-    x.lo
+    rem(x, T)
 end
 function convert{T<:Unsigned}(::Type{Bool}, x::WideUInt{T})
     (x.lo > 1) | (x.hi > 0) && throw(InexactError())
-    x.lo % Bool
+    rem(x, Bool)
 end
 function convert{R<:OtherInteger, T<:Unsigned}(::Type{R}, x::WideUInt{T})
     if (x.lo > typemax(R)) | (x.hi > typemax(R) >> nbits(T))
         throw(InexactError())
     end
-    x.lo % R | x.hi % R << nbits(T)
+    rem(x, R)
+end
+
+function convert{S<:OtherSigned, T<:OtherUnsigned}(::Type{T}, x::WideInt{S,T})
+    x.hi != -signbit(x.lo) && throw(InexactError())
+    rem(x, T)
+end
+function convert{S<:Signed, T<:Unsigned}(::Type{Bool}, x::WideInt{S,T})
+    (x.lo & ~T(1) != 0) | (x.hi != 0) && throw(InexactError())
+    rem(x, Bool)
+end
+function convert{R<:OtherInteger, S<:Signed, T<:Unsigned}(
+        ::Type{R}, x::WideInt{S,T})
+    if !((typemin(R) <= x.lo <= typemax(R)) &
+            (typemin(R) >> nbits(T) <= x.hi <= typemax(R) >> nbits(T)))
+        throw(InexactError())
+    end
+    rem(x, R)
 end
 
 promote_rule{T<:Unsigned, U<:Unsigned}(::Type{WideUInt{T}},
@@ -122,64 +201,112 @@ promote_rule{T<:Unsigned, U<:Unsigned}(::Type{WideUInt{T}},
 promote_rule{T<:Unsigned, U<:Unsigned}(::Type{WideUInt{T}}, ::Type{U}) =
     WideUInt{promote_type(T, U)}
 
+promote_rule{S<:Signed, R<:Unsigned, T<:Signed, U<:Unsigned}(
+        ::Type{WideInt{S,R}}, ::Type{WideInt{T,U}}) =
+    WideInt{promote_type(S, T), promote_type(R, U)}
+promote_rule{S<:Signed, R<:Unsigned, T<:Signed}(
+        ::Type{WideInt{S,R}}, ::Type{T}) =
+    WideInt{promote_type(S,T), promote_type(R,typeof(unsigned(T(0))))}
+
 # Bitwise operations
 
-import Base: leading_zeros, leading_ones, trailing_zeros, trailing_ones
-function leading_zeros{T<:Unsigned}(x::WideUInt{T})
+import Base: count_ones, leading_zeros, trailing_zeros
+
+function count_ones{T}(x::WideUInt{T})
+    count_ones(x.lo) + count_ones(x.hi)
+end
+function leading_zeros{T}(x::WideUInt{T})
     x.hi==0 && return nbits(T) + leading_zeros(x.lo)
     leading_zeros(x.hi)
 end
-function leading_ones{T<:Unsigned}(x::WideUInt{T})
-    ~x.hi==0 && return nbits(T) + leading_ones(x.lo)
-    leading_ones(x.hi)
-end
-function trailing_zeros{T<:Unsigned}(x::WideUInt{T})
+function trailing_zeros{T}(x::WideUInt{T})
     x.lo==0 && return nbits(T) + trailing_zeros(x.hi)
     trailing_zeros(x.lo)
 end
-function trailing_ones{T<:Unsigned}(x::WideUInt{T})
-    ~x.lo==0 && return nbits(T) + trailing_ones(x.hi)
-    trailing_ones(x.lo)
+
+function count_ones{S,T}(x::WideInt{S,T})
+    count_ones(x.lo) + count_ones(x.hi)
+end
+function leading_zeros{S,T}(x::WideInt{S,T})
+    x.hi==0 && return nbits(S) + leading_zeros(x.lo)
+    leading_zeros(x.hi)
+end
+function trailing_zeros{S,T}(x::WideInt{S,T})
+    x.lo==0 && return nbits(T) + trailing_zeros(x.hi)
+    trailing_zeros(x.lo)
 end
 
 import Base: ~
-~{T<:Unsigned}(x::WideUInt{T}) = WideUInt{T}(~x.lo, ~x.hi)
+
+~{T}(x::WideUInt{T}) = WideUInt{T}(~x.lo, ~x.hi)
+~{S,T}(x::WideInt{S,T}) = WideInt{S,T}(~x.lo, ~x.hi)
 
 import Base: <<, >>, >>>
-@inline function <<{T<:Unsigned}(x::WideUInt{T}, y::Int)
+
+@inline function <<{T}(x::WideUInt{T}, y::Int)
     y >= nbits(T) && return WideUInt{T}(0, x.lo << (y - nbits(T)))
     WideUInt{T}(x.lo << y, x.hi << y | x.lo >> (nbits(T) - y))
 end
-@inline function >>{T<:Unsigned}(x::WideUInt{T}, y::Int)
+@inline function >>{T}(x::WideUInt{T}, y::Int)
     y >= nbits(T) && return WideUInt{T}(x.hi >> (y - nbits(T)), 0)
     WideUInt{T}(x.lo >> y | x.hi << (nbits(T) - y), x.hi >> y)
 end
-@inline >>>{T<:Unsigned}(x::WideUInt{T}, y::Int) = >>(x, y)
+@inline >>>{T}(x::WideUInt{T}, y::Int) = >>(x, y)
+
+@inline function <<{S,T}(x::WideInt{S,T}, y::Int)
+    y >= nbits(T) && return WideInt{S,T}(0, x.lo << (y - nbits(T)))
+    WideInt{S,T}(x.lo << y, x.hi << y | x.lo >> (nbits(T) - y))
+end
+@inline function >>{S,T}(x::WideInt{S,T}, y::Int)
+    y >= nbits(S) && return WideInt{S,T}(x.hi >> (y - nbits(T)), signbit(x.hi))
+    WideInt{S,T}(x.lo >> y | x.hi << (nbits(T) - y), x.hi >> y)
+end
+@inline function >>>{S,T}(x::WideInt{S,T}, y::Int)
+    y >= nbits(S) && return WideInt{S,T}(x.hi >> (y - nbits(T)), signbit(x.hi))
+    WideInt{S,T}(x.lo >> y | x.hi << (nbits(T) - y), x.hi >>> y)
+end
 
 import Base: &, |, $
-(&){T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T}) =
+
+(&){T}(x::WideUInt{T}, y::WideUInt{T}) =
     WideUInt{T}(x.lo & y.lo, x.hi & y.hi)
-(|){T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T}) =
+(|){T}(x::WideUInt{T}, y::WideUInt{T}) =
     WideUInt{T}(x.lo | y.lo, x.hi | y.hi)
-($){T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T}) =
+($){T}(x::WideUInt{T}, y::WideUInt{T}) =
     WideUInt{T}(x.lo $ y.lo, x.hi $ y.hi)
+
+(&){S,T}(x::WideInt{S,T}, y::WideInt{S,T}) =
+    WideInt{S,T}(x.lo & y.lo, x.hi & y.hi)
+(|){S,T}(x::WideInt{S,T}, y::WideInt{S,T}) =
+    WideInt{S,T}(x.lo | y.lo, x.hi | y.hi)
+($){S,T}(x::WideInt{S,T}, y::WideInt{S,T}) =
+    WideInt{S,T}(x.lo $ y.lo, x.hi $ y.hi)
 
 # Comparisons
 
-import Base: <, <=
-@inline function <={T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
-    x.hi < y.hi && return true
-    x.hi > y.hi && return false
-    x.lo <= y.lo
-end
-@inline function <{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
+import Base: <
+
+@inline function <{T}(x::WideUInt{T}, y::WideUInt{T})
     x.hi < y.hi && return true
     x.hi > y.hi && return false
     x.lo < y.lo
 end
-import Base: >, >=
-@inline >{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T}) = y < x
-@inline >={T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T}) = y <= x
+
+@inline function <{S,T}(x::WideInt{S,T}, y::WideInt{S,T})
+    x.hi < y.hi && return true
+    x.hi > y.hi && return false
+    x.lo < y.lo
+end
+
+import Base: >, <=, >=
+
+@inline >{T}(x::WideUInt{T}, y::WideUInt{T}) = y < x
+@inline <={T}(x::WideUInt{T}, y::WideUInt{T}) = !(x > y)
+@inline >={T}(x::WideUInt{T}, y::WideUInt{T}) = !(x < y)
+
+@inline >{S,T}(x::WideInt{S,T}, y::WideInt{S,T}) = y < x
+@inline <={S,T}(x::WideInt{S,T}, y::WideInt{S,T}) = !(x > y)
+@inline >={S,T}(x::WideInt{S,T}, y::WideInt{S,T}) = !(x < y)
 
 # Arithmetic operations
 
@@ -199,28 +326,37 @@ else
     rem_overflow{T<:Unsigned}(x::T, y::T) = false
 end
 
-import Base: +, -, abs
+import Base: +, -, abs, signbit
 
-+{T<:Unsigned}(x::WideUInt{T}) = x
-function -{T<:Unsigned}(x::WideUInt{T})
++{T}(x::WideUInt{T}) = x
+function -{T}(x::WideUInt{T})
     lo = -x.lo
     c = neg_overflow(x.lo)
     hi = -x.hi - c
     WideUInt{T}(lo, hi)
 end
-abs{T<:Unsigned}(x::WideUInt{T}) = x
+abs{T}(x::WideUInt{T}) = x
+signbit{T}(x::WideUInt{T}) = false
+
++{S,T}(x::WideInt{S,T}) = x
+function -{S,T}(x::WideInt{S,T})
+    lo = -x.lo
+    c = neg_overflow(x.lo)
+    hi = -x.hi - c
+    WideInt{S,T}(lo, hi)
+end
+function abs{S,T}(x::WideInt{S,T})
+    s = -signbit(x) % WideInt{S,T}
+    x $ s - s
+end
+signbit{S,T}(x::WideInt{S,T}) = signbit(x.hi)
 
 import Base: +, -
+
 @inline function wideadd{T<:Unsigned}(x::T, y::T)
     lo = x + y
     c = add_overflow(x, y)
     hi = c
-    WideUInt{T}(lo, hi)
-end
-@inline function +{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
-    lo = x.lo + y.lo
-    c = add_overflow(x.lo, y.lo)
-    hi = x.hi + y.hi + c
     WideUInt{T}(lo, hi)
 end
 function widesub{T<:Unsigned}(x::T, y::T)
@@ -229,11 +365,31 @@ function widesub{T<:Unsigned}(x::T, y::T)
     hi = -c
     WideUInt{T}(lo, hi)
 end
-@inline function -{T<:Unsigned}(x::WideUInt{T}, y::WideUInt{T})
+
+@inline function +{T}(x::WideUInt{T}, y::WideUInt{T})
+    lo = x.lo + y.lo
+    c = add_overflow(x.lo, y.lo)
+    hi = x.hi + y.hi + c
+    WideUInt{T}(lo, hi)
+end
+@inline function -{T}(x::WideUInt{T}, y::WideUInt{T})
     lo = x.lo - y.lo
     c = sub_overflow(x.lo, y.lo)
     hi = x.hi - y.hi - c
     WideUInt{T}(lo, hi)
+end
+
+@inline function +{S,T}(x::WideInt{S,T}, y::WideInt{S,T})
+    lo = x.lo + y.lo
+    c = add_overflow(x.lo, y.lo)
+    hi = x.hi + y.hi + c
+    WideInt{S,T}(lo, hi)
+end
+@inline function -{S,T}(x::WideInt{S,T}, y::WideInt{S,T})
+    lo = x.lo - y.lo
+    c = sub_overflow(x.lo, y.lo)
+    hi = x.hi - y.hi - c
+    WideInt{S,T}(lo, hi)
 end
 
 import Base: *, divrem, div, rem, fldmod, fld, mod
